@@ -3,6 +3,7 @@ from tkinter import filedialog, ttk, messagebox
 import os
 import threading
 import sys
+import time
 from PIL import Image, ImageTk
 import glob
 
@@ -58,6 +59,12 @@ class VideoProcessorApp:
         self.max_size_mb = tk.DoubleVar(value=16)
         self.quality = tk.IntVar(value=70)
         self.processing = False
+        self.no_size_limit = tk.BooleanVar(value=False)  # Nuova variabile per l'opzione senza limiti
+        
+        # Variabile per il timer
+        self.timer_running = False
+        self.start_time = 0
+        self.timer_text = tk.StringVar(value="Tempo: 00:00:00")
         
         # Variabili per la modalità test
         self.test_mode = tk.BooleanVar(value=False)
@@ -156,23 +163,43 @@ class VideoProcessorApp:
         update_steps_label()  # Inizializza il valore
         
         # Max Size (MB)
-        ttk.Label(params_frame, text="Max Size (MB):").grid(row=2, column=0, sticky=tk.W, pady=5)
-        max_size_scale = ttk.Scale(params_frame, variable=self.max_size_mb, from_=1, to=100, orient=tk.HORIZONTAL)
-        max_size_scale.grid(row=2, column=1, sticky=tk.EW, pady=5)
-        max_size_label = ttk.Label(params_frame, width=5)
-        max_size_label.grid(row=2, column=2, pady=5)
+        max_size_frame = ttk.Frame(params_frame)
+        max_size_frame.grid(row=2, column=0, columnspan=3, sticky=tk.EW, pady=5)
+        
+        ttk.Label(max_size_frame, text="Max Size (MB):").pack(side=tk.LEFT, padx=(0, 5))
+        
+        # Checkbox per nessun limite di dimensione
+        no_limit_check = ttk.Checkbutton(max_size_frame, text="Nessun limite", variable=self.no_size_limit)
+        no_limit_check.pack(side=tk.RIGHT)
+        
+        # Frame per slider e label
+        size_slider_frame = ttk.Frame(params_frame)
+        size_slider_frame.grid(row=3, column=0, columnspan=3, sticky=tk.EW)
+        
+        max_size_scale = ttk.Scale(size_slider_frame, variable=self.max_size_mb, from_=1, to=100, orient=tk.HORIZONTAL)
+        max_size_scale.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
+        
+        max_size_label = ttk.Label(size_slider_frame, width=5)
+        max_size_label.pack(side=tk.RIGHT)
         
         def update_max_size_label(*args):
             max_size_label.config(text=str(int(self.max_size_mb.get())))
+        
+        def update_max_size_state(*args):
+            state = "disabled" if self.no_size_limit.get() else "normal"
+            max_size_scale.configure(state=state)  # Usa configure invece di state
+        
         self.max_size_mb.trace_add("write", update_max_size_label)
+        self.no_size_limit.trace_add("write", update_max_size_state)
         update_max_size_label()  # Inizializza il valore
+        update_max_size_state()  # Inizializza lo stato
         
         # Quality
-        ttk.Label(params_frame, text="Qualità (0-100):").grid(row=3, column=0, sticky=tk.W, pady=5)
+        ttk.Label(params_frame, text="Qualità (0-100):").grid(row=4, column=0, sticky=tk.W, pady=5)
         quality_scale = ttk.Scale(params_frame, variable=self.quality, from_=0, to=100, orient=tk.HORIZONTAL)
-        quality_scale.grid(row=3, column=1, sticky=tk.EW, pady=5)
+        quality_scale.grid(row=4, column=1, sticky=tk.EW, pady=5)
         quality_label = ttk.Label(params_frame, width=5)
-        quality_label.grid(row=3, column=2, pady=5)
+        quality_label.grid(row=4, column=2, pady=5)
         
         def update_quality_label(*args):
             quality_label.config(text=str(self.quality.get()))
@@ -200,9 +227,25 @@ class VideoProcessorApp:
         self.test_mode.trace_add("write", update_test_frames_state)
         update_test_frames_state()  # Inizializza lo stato
         
+        # Frame per i pulsanti e il timer
+        buttons_frame = ttk.Frame(main_frame)
+        buttons_frame.grid(row=6, column=0, columnspan=3, pady=10, sticky=tk.EW)
+        
+        # Timer display
+        timer_label = ttk.Label(buttons_frame, textvariable=self.timer_text)
+        timer_label.pack(side=tk.LEFT, padx=(0, 20))
+        
         # Pulsante di elaborazione
-        self.process_button = ttk.Button(main_frame, text="Elabora Video", command=self.process_video_thread)
-        self.process_button.grid(row=6, column=0, columnspan=3, pady=10)
+        self.process_button = ttk.Button(buttons_frame, text="Elabora Video", command=self.process_video_thread)
+        self.process_button.pack(side=tk.LEFT, padx=5)
+        
+        # Pulsante per aprire la cartella di output
+        open_folder_button = ttk.Button(buttons_frame, text="Apri Cartella Output", command=self.open_output_folder)
+        open_folder_button.pack(side=tk.LEFT, padx=5)
+        
+        # Pulsante di chiusura
+        close_button = ttk.Button(buttons_frame, text="Chiudi", command=self.close_application)
+        close_button.pack(side=tk.RIGHT, padx=5)
         
         # Barra di progresso
         self.progress = ttk.Progressbar(main_frame, orient=tk.HORIZONTAL, length=100, mode='indeterminate')
@@ -249,6 +292,46 @@ class VideoProcessorApp:
         if filename:
             self.model_path.set(filename)
     
+    def open_output_folder(self):
+        """Apre la cartella di output nel File Explorer"""
+        output_dir = self.output_dir.get()
+        if os.path.exists(output_dir):
+            # Utilizzo di 'explorer' per Windows
+            os.startfile(output_dir)
+        else:
+            messagebox.showinfo("Informazione", "La cartella di output non esiste ancora.")
+    
+    def update_timer(self):
+        """Aggiorna il timer se è in esecuzione"""
+        if self.timer_running:
+            elapsed_time = time.time() - self.start_time
+            hours = int(elapsed_time // 3600)
+            minutes = int((elapsed_time % 3600) // 60)
+            seconds = int(elapsed_time % 60)
+            
+            self.timer_text.set(f"Tempo: {hours:02d}:{minutes:02d}:{seconds:02d}")
+            self.root.after(1000, self.update_timer)
+    
+    def start_timer(self):
+        """Avvia il timer"""
+        self.start_time = time.time()
+        self.timer_running = True
+        self.update_timer()
+    
+    def stop_timer(self):
+        """Ferma il timer"""
+        self.timer_running = False
+    
+    def close_application(self):
+        """Chiude l'applicazione"""
+        if self.processing:
+            if messagebox.askyesno("Conferma", "Un'elaborazione è in corso. Sei sicuro di voler chiudere?"):
+                self.restore_stdout()
+                self.root.destroy()
+        else:
+            self.restore_stdout()
+            self.root.destroy()
+    
     def process_video_thread(self):
         # Verifica input
         if not self.video_path.get():
@@ -272,6 +355,9 @@ class VideoProcessorApp:
         self.process_button.config(state=tk.DISABLED)
         self.progress.start()
         
+        # Avvia il timer
+        self.start_timer()
+        
         # Pulisci il log
         self.log_text.configure(state=tk.NORMAL)
         self.log_text.delete(1.0, tk.END)
@@ -290,6 +376,11 @@ class VideoProcessorApp:
             else:
                 max_frames = None
             
+            # Gestione dell'opzione "nessun limite di dimensione"
+            max_size = None if self.no_size_limit.get() else self.max_size_mb.get()
+            if self.no_size_limit.get():
+                print("Opzione 'nessun limite di dimensione' attivata: il video non sarà compresso")
+            
             # Chiama la funzione di elaborazione dal tuo script
             process_video(
                 self.video_path.get(),
@@ -298,7 +389,7 @@ class VideoProcessorApp:
                 self.model_path.get(),
                 self.strength.get(),
                 self.steps.get(),
-                self.max_size_mb.get(),
+                max_size,
                 self.quality.get(),
                 max_frames=max_frames  # Passa il parametro max_frames
             )
@@ -311,6 +402,9 @@ class VideoProcessorApp:
             print(f"Errore durante l'elaborazione: {str(e)}")
             self.root.after(0, lambda: messagebox.showerror("Errore", f"Errore durante l'elaborazione: {str(e)}"))
         finally:
+            # Ferma il timer
+            self.stop_timer()
+            
             # Ferma la barra di progresso e riabilita il pulsante
             self.root.after(0, self.progress.stop)
             self.root.after(0, lambda: self.process_button.config(state=tk.NORMAL))
