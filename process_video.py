@@ -24,7 +24,7 @@ def clear_memory():
         torch.cuda.empty_cache()
         torch.cuda.ipc_collect()
 
-def extract_frames(video_path, output_dir, extract_all=True):
+def extract_frames(video_path, output_dir, extract_all=True, max_frames=None):
     """
     Extract frames from a video file and save them as separate images
     
@@ -32,6 +32,7 @@ def extract_frames(video_path, output_dir, extract_all=True):
         video_path: Path to the video file
         output_dir: Directory to save extracted frames
         extract_all: If True, extract all frames from the video
+        max_frames: Maximum number of frames to extract (None for all frames)
     """
     # Create output directory if it doesn't exist
     os.makedirs(output_dir, exist_ok=True)
@@ -52,7 +53,13 @@ def extract_frames(video_path, output_dir, extract_all=True):
     print(f"Info video: {total_frames} frames, {fps:.2f} FPS, {duration:.2f} secondi")
     
     # Calculate frame indices to extract
-    frame_indices = list(range(total_frames))
+    if max_frames is not None and max_frames < total_frames:
+        # Calcola l'intervallo per distribuire uniformemente i frame
+        step = total_frames / max_frames
+        frame_indices = [int(i * step) for i in range(max_frames)]
+        print(f"Modalità test: estrazione di {max_frames} frames distribuiti uniformemente")
+    else:
+        frame_indices = list(range(total_frames))
     
     # Extract and save frames
     frames_extracted = 0
@@ -376,7 +383,7 @@ def create_video_from_images(input_dir, output_path, fps=30, max_size_mb=None, q
     print(f"Proprietà video: {width}x{height}, {fps} FPS, {len(image_files)} frames")
     return True
 
-def process_video(video_path, output_dir, prompt, model_path, strength=0.75, steps=20, max_size_mb=None, quality=None):
+def process_video(video_path, output_dir, prompt, model_path, strength=0.75, steps=20, max_size_mb=None, quality=None, max_frames=None):
     """Process a video through the entire pipeline"""
     # Create directories
     frames_dir = os.path.join(output_dir, "frames")
@@ -389,7 +396,7 @@ def process_video(video_path, output_dir, prompt, model_path, strength=0.75, ste
     output_video = os.path.join(output_dir, "output_video.mp4")
     
     print("\n=== FASE 1: ESTRAZIONE FRAMES ===")
-    fps = extract_frames(video_path, frames_dir)
+    fps = extract_frames(video_path, frames_dir, max_frames=max_frames)
     if not fps:
         print("Errore nell'estrazione dei frames. Uscita.")
         return False
@@ -421,6 +428,7 @@ if __name__ == "__main__":
     parser.add_argument("--steps", type=int, default=20, help="Numero di passi di inferenza")
     parser.add_argument("--max_size_mb", type=float, default=None, help="Dimensione massima del file video in MB")
     parser.add_argument("--quality", type=int, default=None, help="Qualità video (0-100, più basso = più compressione)")
+    parser.add_argument("--max_frames", type=int, default=None, help="Numero massimo di frames da elaborare (modalità test)")
     
     args = parser.parse_args()
     
@@ -432,5 +440,6 @@ if __name__ == "__main__":
         args.strength,
         args.steps,
         args.max_size_mb,
-        args.quality
+        args.quality,
+        args.max_frames
     )
