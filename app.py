@@ -35,6 +35,19 @@ class VideoProcessorApp:
         self.root.title("Video Processor con Stable Diffusion")
         self.root.geometry("800x700")
         
+        # Imposta l'icona dell'applicazione
+        try:
+            icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "skull.png")
+            if os.path.exists(icon_path):
+                icon_image = Image.open(icon_path)
+                icon_photo = ImageTk.PhotoImage(icon_image)
+                self.root.iconphoto(True, icon_photo)
+                print(f"Icona caricata da: {icon_path}")
+            else:
+                print(f"File icona non trovato: {icon_path}")
+        except Exception as e:
+            print(f"Errore nel caricamento dell'icona: {str(e)}")
+        
         # Variabili
         self.video_path = tk.StringVar()
         self.output_dir = tk.StringVar(value=os.path.join(os.getcwd(), "output"))
