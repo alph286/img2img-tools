@@ -4,6 +4,7 @@ import os
 import threading
 import sys
 from PIL import Image, ImageTk
+import glob
 
 # Importa le funzioni dal tuo script esistente
 from process_video import process_video
@@ -49,11 +50,37 @@ class VideoProcessorApp:
         self.test_mode = tk.BooleanVar(value=False)
         self.test_frames = tk.IntVar(value=10)
         
+        # Carica automaticamente il primo modello disponibile
+        self.load_default_model()
+        
         # Configurazione dell'interfaccia
         self.setup_ui()
         
         # Reindirizza stdout al widget di testo
         self.redirect_stdout()
+    
+    def load_default_model(self):
+        """Carica automaticamente il primo modello disponibile nella cartella models"""
+        models_dir = os.path.join(os.getcwd(), "checkpoints")
+        
+        # Verifica se la cartella models esiste
+        if not os.path.exists(models_dir):
+            print(f"Cartella models non trovata in {os.getcwd()}")
+            return
+        
+        # Cerca tutti i file modello nella cartella models
+        model_extensions = ["*.safetensors", "*.ckpt", "*.pth"]
+        model_files = []
+        
+        for ext in model_extensions:
+            model_files.extend(glob.glob(os.path.join(models_dir, ext)))
+        
+        # Se ci sono modelli, imposta il primo come predefinito
+        if model_files:
+            self.model_path.set(model_files[0])
+            print(f"Modello caricato automaticamente: {os.path.basename(model_files[0])}")
+        else:
+            print("Nessun modello trovato nella cartella models")
     
     def redirect_stdout(self):
         self.stdout_backup = sys.stdout
