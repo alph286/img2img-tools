@@ -65,7 +65,7 @@ class VideoProcessorApp:
         
         # Verifica se la cartella models esiste
         if not os.path.exists(models_dir):
-            print(f"Cartella models non trovata in {os.getcwd()}")
+            print(f"Cartella checkpoints non trovata in {os.getcwd()}")
             return
         
         # Cerca tutti i file modello nella cartella models
@@ -80,7 +80,7 @@ class VideoProcessorApp:
             self.model_path.set(model_files[0])
             print(f"Modello caricato automaticamente: {os.path.basename(model_files[0])}")
         else:
-            print("Nessun modello trovato nella cartella models")
+            print("Nessun modello trovato nella cartella checkpoints")
     
     def redirect_stdout(self):
         self.stdout_backup = sys.stdout
