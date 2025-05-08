@@ -24,21 +24,21 @@ def preprocess_image(image_path):
         # Load image
         image = Image.open(str(image_path)).convert("RGB")
         
-        # SDXL works best with specific dimensions - let's use standard sizes
-        # Use 1024x576 (16:9) or 768x768 (1:1) depending on aspect ratio
+        # Resize to 512 pixels on the shortest side while maintaining aspect ratio
         width, height = image.size
-        aspect_ratio = width / height
         
-        if aspect_ratio > 1.1:  # Landscape
-            new_width, new_height = 1024, 576
-        elif aspect_ratio < 0.9:  # Portrait
-            new_width, new_height = 576, 1024
-        else:  # Square-ish
-            new_width, new_height = 768, 768
+        if width < height:
+            # Width is the shorter side
+            new_width = 512
+            new_height = int(height * (512 / width))
+        else:
+            # Height is the shorter side or they're equal
+            new_height = 512
+            new_width = int(width * (512 / height))
             
         # Resize image to target dimensions
         image = image.resize((new_width, new_height), Image.LANCZOS)
-        print(f"Resized image to {new_width}x{new_height}")
+        print(f"Resized image to {new_width}x{new_height} (shortest side 512px)")
         
         return image
     except Exception as e:
@@ -78,21 +78,67 @@ def process_images(input_dir, output_dir, prompt, model_path="sd_xl_turbo_1.0_fp
     print(f"PyTorch version: {torch.__version__}")
     print(f"CUDA available according to PyTorch: {torch.cuda.is_available()}")
     
+    device = "cpu"  # Default to CPU
+    
+    # Improved CUDA detection and initialization
     if torch.cuda.is_available():
         try:
+            # Reset CUDA before testing
+            torch.cuda.empty_cache()
+            torch.cuda.reset_peak_memory_stats()
+            
             # Test CUDA availability more thoroughly
             test_tensor = torch.zeros(1).cuda()
-            del test_tensor
-            device = "cuda"
-            print(f"CUDA is available. Using GPU: {torch.cuda.get_device_name()}")
-            print(f"CUDA device count: {torch.cuda.device_count()}")
-            print(f"CUDA device properties: {torch.cuda.get_device_properties(0)}")
+            # Try a small computation to verify CUDA is working
+            test_result = test_tensor + 1
+            
+            # Force synchronization to ensure CUDA operations complete
+            torch.cuda.synchronize()
+            
+            # Check if the result is correct
+            if test_result.item() == 1:
+                device = "cuda"
+                print(f"CUDA is available and working. Using GPU: {torch.cuda.get_device_name()}")
+                print(f"CUDA device count: {torch.cuda.device_count()}")
+                print(f"CUDA memory allocated: {torch.cuda.memory_allocated(0) / 1024**2:.2f} MB")
+                print(f"CUDA memory reserved: {torch.cuda.memory_reserved(0) / 1024**2:.2f} MB")
+                
+                # Try to initialize cuDNN to ensure it's working
+                torch.backends.cudnn.enabled = True
+                
+                # Force initialize CUDA context
+                dummy = torch.ones(1).cuda()
+                del dummy
+                torch.cuda.synchronize()
+            else:
+                print("CUDA test computation failed. Falling back to CPU.")
+            
+            # Clean up test tensors
+            del test_tensor, test_result
+            torch.cuda.empty_cache()
+            
         except Exception as e:
             print(f"CUDA reported as available but failed in testing: {e}")
-            device = "cpu"
             print("WARNING: Falling back to CPU (this will be very slow)")
+            
+            # Try to reinitialize CUDA
+            try:
+                print("Attempting to reinitialize CUDA...")
+                torch.cuda.empty_cache()
+                torch.cuda.reset_max_memory_allocated()
+                torch.cuda.reset_max_memory_cached()
+                
+                # Try a different CUDA initialization approach
+                dummy = torch.cuda.FloatTensor(1)
+                del dummy
+                torch.cuda.synchronize()
+                
+                device = "cuda"
+                print("CUDA reinitialized successfully!")
+            except Exception as reinit_error:
+                print(f"CUDA reinitialization failed: {reinit_error}")
+                device = "cpu"
     else:
-        device = "cpu"
         print("WARNING: CUDA not available. Using CPU (this will be very slow)")
         print("To enable CUDA, you may need to:")
         print("1. Install PyTorch with CUDA support: pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118")
@@ -105,11 +151,17 @@ def process_images(input_dir, output_dir, prompt, model_path="sd_xl_turbo_1.0_fp
     
     # Performance optimizations
     if device == "cuda":
-        torch.backends.cudnn.benchmark = True
-        if hasattr(torch.backends.cuda, "matmul"):
-            torch.backends.cuda.matmul.allow_tf32 = True
-        if hasattr(torch.backends, "cudnn"):
-            torch.backends.cudnn.allow_tf32 = True
+        try:
+            torch.backends.cudnn.benchmark = True
+            if hasattr(torch.backends.cuda, "matmul"):
+                torch.backends.cuda.matmul.allow_tf32 = True
+            if hasattr(torch.backends, "cudnn"):
+                torch.backends.cudnn.allow_tf32 = True
+            # Set a reasonable memory limit to prevent OOM errors
+            if hasattr(torch.cuda, "set_per_process_memory_fraction"):
+                torch.cuda.set_per_process_memory_fraction(0.8)  # Use 80% of available VRAM
+        except Exception as e:
+            print(f"Warning: Could not set all CUDA optimizations: {e}")
     
     try:
         # For SDXL Turbo, we need to use the SDXL pipeline
@@ -123,9 +175,55 @@ def process_images(input_dir, output_dir, prompt, model_path="sd_xl_turbo_1.0_fp
             local_files_only=True,
         )
         
-        # Force model to GPU
+        # Force model to GPU with better error handling
         if device == "cuda":
-            pipe = pipe.to("cuda")
+            try:
+                # Clear CUDA cache before loading model
+                torch.cuda.empty_cache()
+                
+                # Try to move model to CUDA
+                pipe = pipe.to("cuda")
+                
+                # Verify model is actually on CUDA
+                sample_param = next(pipe.parameters())
+                if sample_param.device.type != "cuda":
+                    print("Warning: Model not properly moved to CUDA. Trying alternative method...")
+                    
+                    # Alternative method to move model to CUDA
+                    for name, param in pipe.named_parameters():
+                        param.data = param.data.to("cuda")
+                    
+                    # Check again
+                    sample_param = next(pipe.parameters())
+                    if sample_param.device.type == "cuda":
+                        print("Successfully moved model to CUDA using alternative method")
+                    else:
+                        print("WARNING: Could not move model to CUDA despite multiple attempts")
+                        print("Trying one last approach...")
+                        
+                        # Last resort: reload model directly to CUDA
+                        del pipe
+                        torch.cuda.empty_cache()
+                        torch.cuda.synchronize()
+                        
+                        pipe = StableDiffusionXLImg2ImgPipeline.from_single_file(
+                            model_path,
+                            torch_dtype=torch.float16,
+                            use_safetensors=True,
+                            local_files_only=True,
+                            device_map="cuda"
+                        )
+                else:
+                    print("Model successfully moved to CUDA")
+                
+                # Force synchronization to ensure model is loaded
+                torch.cuda.synchronize()
+                
+            except Exception as cuda_err:
+                print(f"Error moving model to CUDA: {cuda_err}")
+                print("Falling back to CPU")
+                device = "cpu"
+                pipe = pipe.to("cpu")
             print("Model explicitly moved to CUDA")
         
         # Use a simpler scheduler that's more compatible
