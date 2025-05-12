@@ -89,13 +89,14 @@ def check_and_install_dependencies():
         "requests": "requests>=2.28.0",
         "pillow": "pillow>=9.0.0",
         "ffmpeg-python": "ffmpeg-python>=0.2.0",
+        "numpy": "numpy<2.0", # Aggiunto per garantire la compatibilità
     }
     
     # Installa tutte le dipendenze base senza verificare se sono già installate
     print("Installazione di tutte le dipendenze base...")
     try:
         # Installa PyTorch con supporto CUDA separatamente
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "--upgrade", "--no-cache-dir", "torch==2.0.1", "torchvision==0.15.2", "torchaudio==2.0.2", "--index-url", "https://download.pytorch.org/whl/cu118"]) # MODIFICATO: Pinnato torch==2.0.1, torchvision==0.15.2, torchaudio==2.0.2 per compatibilità con BasicSR
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "--no-cache-dir", "torch>=2.1.0", "torchvision>=0.16.0", "torchaudio>=2.1.0", "--index-url", "https://download.pytorch.org/whl/cu118"])
         print("PyTorch con supporto CUDA installato con successo!")
         
         # Installa le altre dipendenze
@@ -117,24 +118,20 @@ def check_and_install_dependencies():
     # Installa le dipendenze per Real-ESRGAN in ordine specifico
     print("\nInstallazione delle dipendenze per l'upscaling di alta qualità...")
     try:
-        # Disinstalla versioni esistenti per garantire un'installazione pulita
-        packages_to_uninstall = ["realesrgan", "facexlib", "basicsr"]
-        for pkg in packages_to_uninstall:
-            print(f"Tentativo di disinstallazione di {pkg}...")
-            # Usare subprocess.run per non interrompere lo script se il pacchetto non è installato e per sopprimere l'output
-            subprocess.run([sys.executable, "-m", "pip", "uninstall", "-y", pkg], stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
-
         # Installa prima basicsr (da GitHub per compatibilità con torchvision più recenti)
+        # Manteniamo --force-reinstall per basicsr da GitHub per assicurare la versione corretta
         print("Installazione di basicsr da GitHub...")
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "--force-reinstall", "--no-cache-dir", "git+https://github.com/XPixelGroup/BasicSR.git#egg=basicsr"]) # MODIFICATO: Rimosso --upgrade, mantenuto --force-reinstall
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "--no-cache-dir", "git+https://github.com/XPixelGroup/BasicSR.git#egg=basicsr"])
         
         # Poi installa facexlib
+        # Rimuoviamo --force-reinstall per facexlib, pip lo gestirà se necessario
         print("Installazione di facexlib...")
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "--force-reinstall", "--no-cache-dir", "facexlib>=0.2.5"]) # MODIFICATO: Rimosso --upgrade, mantenuto --force-reinstall
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "--no-cache-dir", "facexlib>=0.2.5"])
         
         # Infine installa realesrgan (da PyPI)
+        # Rimuoviamo --force-reinstall per realesrgan da PyPI
         print("Installazione di realesrgan da PyPI...")
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "--force-reinstall", "--no-cache-dir", "realesrgan>=0.3.0"]) # MODIFICATO: Rimosso --upgrade, mantenuto --force-reinstall
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "--no-cache-dir", "realesrgan>=0.3.0"])
         
         # Verifica se realesrgan è stato installato correttamente
         try:
@@ -153,20 +150,24 @@ def check_and_install_dependencies():
                 # Prova a installare Real-ESRGAN da GitHub
                 print("Installazione di Real-ESRGAN da GitHub...")
                 subprocess.check_call([
-                    sys.executable, "-m", "pip", "install", "--force-reinstall", "--no-cache-dir",
+                    sys.executable, "-m", "pip", "install", "--no-cache-dir",
                     "git+https://github.com/xinntao/Real-ESRGAN.git"
-                ]) # MODIFICATO: Rimosso --upgrade, mantenuto --force-reinstall
+                ]) # MODIFICATO: Rimosso --upgrade, Rimosso --force-reinstall
                 # Riprova gli import dopo l'installazione da GitHub
                 import realesrgan 
                 from basicsr.archs.rrdbnet_arch import RRDBNet 
                 from realesrgan import RealESRGANer
                 print("Real-ESRGAN installato con successo tramite GitHub!")
             except (subprocess.SubprocessError, ImportError) as e_gh_install_import:
+
+
                 print(f"Installazione/Import di Real-ESRGAN da GitHub fallita: {e_gh_install_import}")
-                print("L'upscaling utilizzerà metodi standard invece di Real-ESRGAN.")
+                print("L'applicazione non può procedere. Impossibile installare Real-ESRGAN.")
+                return False
     except subprocess.SubprocessError as e:
-        print(f"Errore durante l'installazione delle dipendenze opzionali: {e}")
-        print("L'upscaling utilizzerà metodi standard invece di Real-ESRGAN.")
+        print(f"Errore durante l'installazione di una dipendenza per Real-ESRGAN (basicsr, facexlib, o tentativo iniziale di realesrgan): {e}")
+        print("L'applicazione non può procedere. Impossibile installare le dipendenze per Real-ESRGAN.")
+        return False
     
     # Verifica FFmpeg
     if not check_ffmpeg():
@@ -293,8 +294,10 @@ def main():
             print("python batch_img2img.py --input_dir ./input --output_dir ./output --prompt \"il tuo prompt qui\" --model_path ./checkpoints/sd_xl_turbo_1.0_fp16.safetensors --strength 0.75 --steps 20")
             print("\npython video_img2img.py --input_video ./input.mp4 --output_video ./output.mp4 --prompt \"il tuo prompt qui\" --model_path ./checkpoints/sd_xl_turbo_1.0_fp16.safetensors --strength 0.75 --steps 1")
     else:
-        print("\nL'applicazione non può essere avviata perché alcune dipendenze non sono soddisfatte.")
+        print("\nL'applicazione non può essere avviata perché alcune dipendenze non sono soddisfatte o l'installazione è fallita.")
+        print("Controlla i messaggi di errore precedenti per i dettagli.")
         print("Assicurati di installare FFmpeg e tutte le dipendenze richieste prima di avviare l'applicazione.")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
