@@ -96,7 +96,7 @@ def check_and_install_dependencies():
     print("Installazione di tutte le dipendenze base...")
     try:
         # Installa PyTorch con supporto CUDA separatamente
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "--no-cache-dir", "torch>=2.1.0", "torchvision>=0.16.0", "torchaudio>=2.1.0", "--index-url", "https://download.pytorch.org/whl/cu118"])
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "--no-cache-dir", "--retries", "5", "--timeout", "60", "torch>=2.1.0", "torchvision>=0.16.0", "torchaudio>=2.1.0", "--index-url", "https://download.pytorch.org/whl/cu118"])
         print("PyTorch con supporto CUDA installato con successo!")
         
         # Installa le altre dipendenze
