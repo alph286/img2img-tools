@@ -78,7 +78,8 @@ def check_and_install_dependencies():
     """Controlla e installa le dipendenze Python necessarie."""
     # Dipendenze base
     required_packages = {
-        "torch": "torch>=2.0.0 --index-url https://download.pytorch.org/whl/cu118",
+        # "torch": "torch>=2.0.0 --index-url https://download.pytorch.org/whl/cu118", # Gestito separatamente con versioni pinnate
+        "torchvision": "torchvision==0.15.2", # Assicuriamoci che torchvision sia pinnato anche qui sebbene installato prima
         "diffusers": "diffusers>=0.19.0",
         "opencv-python": "opencv-python>=4.5.0",
         "transformers": "transformers>=4.30.0",
@@ -94,13 +95,19 @@ def check_and_install_dependencies():
     print("Installazione di tutte le dipendenze base...")
     try:
         # Installa PyTorch con supporto CUDA separatamente
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "torch>=2.0.0", "torchvision>=0.15.0", "--index-url", "https://download.pytorch.org/whl/cu118"])
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "--upgrade", "--no-cache-dir", "torch==2.0.1", "torchvision==0.15.2", "torchaudio==2.0.2", "--index-url", "https://download.pytorch.org/whl/cu118"]) # MODIFICATO: Pinnato torch==2.0.1, torchvision==0.15.2, torchaudio==2.0.2 per compatibilità con BasicSR
         print("PyTorch con supporto CUDA installato con successo!")
         
         # Installa le altre dipendenze
-        other_packages = [req for pkg, req in required_packages.items() if pkg not in ["torch", "torchvision"]]
-        if other_packages:
-            subprocess.check_call([sys.executable, "-m", "pip", "install"] + other_packages)
+        # Filtra i pacchetti, escludendo torch e torchvision che sono già stati installati con versioni specifiche.
+        other_package_names = [pkg for pkg in required_packages.keys() if pkg not in ["torch", "torchvision"]]
+        other_packages_to_install = [required_packages[pkg] for pkg in other_package_names if required_packages[pkg]] # Prende la stringa di requisito
+        
+        if other_packages_to_install:
+            # Usiamo --no-cache-dir per evitare problemi di cache, ma rimuoviamo --upgrade per non alterare torchvision pinnato.
+            # Pip installerà/aggiornerà questi pacchetti solo se necessario per soddisfare le versioni minime specificate,
+            # cercando di mantenere torchvision==0.15.2.
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "--no-cache-dir"] + other_packages_to_install) # MODIFICATO: Rimosso --upgrade
         print("Tutte le dipendenze base sono state installate con successo!")
     except subprocess.SubprocessError as e:
         print(f"Errore durante l'installazione delle dipendenze: {e}")
@@ -110,37 +117,52 @@ def check_and_install_dependencies():
     # Installa le dipendenze per Real-ESRGAN in ordine specifico
     print("\nInstallazione delle dipendenze per l'upscaling di alta qualità...")
     try:
-        # Installa prima basicsr
-        print("Installazione di basicsr...")
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "basicsr>=1.4.2"])
+        # Disinstalla versioni esistenti per garantire un'installazione pulita
+        packages_to_uninstall = ["realesrgan", "facexlib", "basicsr"]
+        for pkg in packages_to_uninstall:
+            print(f"Tentativo di disinstallazione di {pkg}...")
+            # Usare subprocess.run per non interrompere lo script se il pacchetto non è installato e per sopprimere l'output
+            subprocess.run([sys.executable, "-m", "pip", "uninstall", "-y", pkg], stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+
+        # Installa prima basicsr (da GitHub per compatibilità con torchvision più recenti)
+        print("Installazione di basicsr da GitHub...")
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "--force-reinstall", "--no-cache-dir", "git+https://github.com/XPixelGroup/BasicSR.git#egg=basicsr"]) # MODIFICATO: Rimosso --upgrade, mantenuto --force-reinstall
         
         # Poi installa facexlib
         print("Installazione di facexlib...")
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "facexlib>=0.2.5"])
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "--force-reinstall", "--no-cache-dir", "facexlib>=0.2.5"]) # MODIFICATO: Rimosso --upgrade, mantenuto --force-reinstall
         
-        # Infine installa realesrgan
-        print("Installazione di realesrgan...")
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "realesrgan>=0.3.0"])
+        # Infine installa realesrgan (da PyPI)
+        print("Installazione di realesrgan da PyPI...")
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "--force-reinstall", "--no-cache-dir", "realesrgan>=0.3.0"]) # MODIFICATO: Rimosso --upgrade, mantenuto --force-reinstall
         
         # Verifica se realesrgan è stato installato correttamente
         try:
             import realesrgan
             from basicsr.archs.rrdbnet_arch import RRDBNet
             from realesrgan import RealESRGANer
-            print("Real-ESRGAN installato con successo!")
-        except ImportError as e:
-            print(f"Real-ESRGAN non è stato installato correttamente: {e}")
-            print("Tentativo di installazione alternativa...")
+            print("Real-ESRGAN installato con successo da PyPI!")
+        except ImportError as e_import_pypi:
+            print(f"Real-ESRGAN (da PyPI) non è stato installato/importato correttamente: {e_import_pypi}")
+            print("Tentativo di installazione alternativa di Real-ESRGAN da GitHub...")
             try:
-                # Prova a installare da GitHub
+                # Disinstalla di nuovo realesrgan prima di tentare da GitHub per pulizia
+                print("Tentativo di disinstallazione di realesrgan prima dell'installazione da GitHub...")
+                subprocess.run([sys.executable, "-m", "pip", "uninstall", "-y", "realesrgan"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+                
+                # Prova a installare Real-ESRGAN da GitHub
+                print("Installazione di Real-ESRGAN da GitHub...")
                 subprocess.check_call([
-                    sys.executable, "-m", "pip", "install", 
+                    sys.executable, "-m", "pip", "install", "--force-reinstall", "--no-cache-dir",
                     "git+https://github.com/xinntao/Real-ESRGAN.git"
-                ])
-                import realesrgan
+                ]) # MODIFICATO: Rimosso --upgrade, mantenuto --force-reinstall
+                # Riprova gli import dopo l'installazione da GitHub
+                import realesrgan 
+                from basicsr.archs.rrdbnet_arch import RRDBNet 
+                from realesrgan import RealESRGANer
                 print("Real-ESRGAN installato con successo tramite GitHub!")
-            except (subprocess.SubprocessError, ImportError) as e:
-                print(f"Installazione alternativa fallita: {e}")
+            except (subprocess.SubprocessError, ImportError) as e_gh_install_import:
+                print(f"Installazione/Import di Real-ESRGAN da GitHub fallita: {e_gh_install_import}")
                 print("L'upscaling utilizzerà metodi standard invece di Real-ESRGAN.")
     except subprocess.SubprocessError as e:
         print(f"Errore durante l'installazione delle dipendenze opzionali: {e}")
