@@ -326,7 +326,8 @@ def process_video(input_video, output_video, prompt, model_path="sd_xl_turbo_1.0
                     pipe = pipe.to("cuda")
                     
                     # Verify model is actually on CUDA
-                    sample_param = next(pipe.parameters())
+                    # Check a core component like unet for its device
+                    sample_param = next(pipe.unet.parameters())
                     if sample_param.device.type != "cuda":
                         print("Warning: Model not properly moved to CUDA. Trying alternative method...")
                         
@@ -335,7 +336,7 @@ def process_video(input_video, output_video, prompt, model_path="sd_xl_turbo_1.0
                             param.data = param.data.to("cuda")
                         
                         # Check again
-                        sample_param = next(pipe.parameters())
+                        sample_param = next(pipe.unet.parameters())
                         if sample_param.device.type == "cuda":
                             print("Successfully moved model to CUDA using alternative method")
                         else:
@@ -405,7 +406,12 @@ def process_video(input_video, output_video, prompt, model_path="sd_xl_turbo_1.0
                 raise RuntimeError("Failed to load model. Please run as administrator or enable Developer Mode in Windows.")
         
         # Process each frame
-        frame_files = sorted([f for f in os.listdir(frames_dir) if f.startswith("frame_")])
+        all_frame_files = sorted([f for f in os.listdir(frames_dir) if f.startswith("frame_")])
+        # Apply max_frames limit to the list of files to be processed
+        if max_frames is not None and max_frames > 0:
+            frame_files = all_frame_files[:max_frames]
+        else:
+            frame_files = all_frame_files
         total_frames = len(frame_files)
         
         print(f"Processing {total_frames} frames with img2img...")
