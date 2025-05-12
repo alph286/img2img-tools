@@ -172,20 +172,40 @@ def download_model(url, destination):
             bar.update(size)
 
 def download_upscaler_model():
-    """Scarica il modello Real-ESRGAN per l'upscaling."""
+    """Scarica il modello Real-ESRGAN per l'upscaling, chiedendo conferma all'utente."""
     models_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models")
     if not os.path.exists(models_dir):
         os.makedirs(models_dir)
     
-    model_path = os.path.join(models_dir, "RealESRGAN_x2plus.pth")
+    model_filename = "RealESRGAN_x2plus.pth"
+    model_path = os.path.join(models_dir, model_filename)
     
     if not os.path.exists(model_path):
-        print("\nScaricamento del modello Real-ESRGAN per l'upscaling in corso...")
-        model_url = "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.1/RealESRGAN_x2plus.pth"
-        download_model(model_url, model_path)
-        print(f"\nModello di upscaling scaricato con successo in: {model_path}")
+        # Aggiunta della richiesta di conferma all'utente
+        download_choice = input(f"\nIl modello di upscaling Real-ESRGAN ({model_filename}) non è presente nella cartella '{models_dir}'.\nVuoi scaricarlo ora? (circa 65MB) (sì/no): ").lower()
+        if download_choice in ["sì", "si", "s", "yes", "y"]:
+            print(f"\nScaricamento del modello {model_filename} in corso...")
+            model_url = "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.1/RealESRGAN_x2plus.pth"
+            try:
+                download_model(model_url, model_path) # download_model è una funzione helper esistente
+                if os.path.exists(model_path):
+                    print(f"\nModello di upscaling scaricato con successo in: {model_path}")
+                else:
+                    # Questa condizione potrebbe verificarsi se download_model non crea il file nonostante non ci siano eccezioni
+                    print(f"\nDownload del modello di upscaling fallito. Il file non è stato trovato in: {model_path} dopo il tentativo di download.")
+            except Exception as e:
+                print(f"\nErrore durante il download del modello di upscaling: {e}")
+                # Se il file esiste (potrebbe essere parziale o corrotto), tentare di rimuoverlo
+                if os.path.exists(model_path):
+                    try:
+                        os.remove(model_path)
+                        print(f"Rimosso file potenzialmente corrotto/parziale: {model_path}")
+                    except OSError as oe:
+                        print(f"Errore durante la rimozione del file {model_path}: {oe}")
+        else:
+            print(f"\nScaricamento del modello {model_filename} saltato. L'upscaling con Real-ESRGAN potrebbe non funzionare.")
     else:
-        print(f"\nIl modello di upscaling è già presente in: {model_path}")
+        print(f"\nIl modello di upscaling {model_filename} è già presente in: {model_path}")
     
     return model_path
 
