@@ -211,7 +211,9 @@ def main():
         if os.path.exists(app_path):
             print("\nAvvio dell'applicazione img2img-tools...")
             try:
-                subprocess.run([sys.executable, app_path], check=True)
+                # Passa eventuali argomenti della riga di comando all'app
+                cmd = [sys.executable, app_path] + sys.argv[1:]
+                subprocess.run(cmd, check=True)
             except subprocess.SubprocessError:
                 print("\nErrore durante l'avvio dell'applicazione.")
         else:
