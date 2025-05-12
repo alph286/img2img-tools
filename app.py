@@ -7,8 +7,8 @@ import time
 from PIL import Image, ImageTk
 import glob
 
-# Importa le funzioni dal tuo script esistente
-from process_video import process_video
+# Importa le funzioni dal nuovo script principale
+from video_img2img import process_video
 
 class RedirectText:
     def __init__(self, text_widget):
@@ -69,6 +69,10 @@ class VideoProcessorApp:
         # Variabili per la modalità test
         self.test_mode = tk.BooleanVar(value=False)
         self.test_frames = tk.IntVar(value=10)
+        
+        # Nuove variabili per upscaling
+        self.upscale_height = tk.IntVar(value=1080)
+        self.use_realesrgan = tk.BooleanVar(value=True)
         
         # Carica automaticamente il primo modello disponibile
         self.load_default_model()
@@ -162,9 +166,19 @@ class VideoProcessorApp:
         self.steps.trace_add("write", update_steps_label)
         update_steps_label()  # Inizializza il valore
         
+        # Upscale Height
+        ttk.Label(params_frame, text="Altezza Upscale:").grid(row=2, column=0, sticky=tk.W, pady=5)
+        upscale_height_values = [720, 1080, 1440, 2160]
+        upscale_height_combo = ttk.Combobox(params_frame, textvariable=self.upscale_height, values=upscale_height_values, width=5)
+        upscale_height_combo.grid(row=2, column=1, sticky=tk.W, pady=5)
+        
+        # Checkbox per Real-ESRGAN
+        realesrgan_check = ttk.Checkbutton(params_frame, text="Usa Real-ESRGAN per upscaling", variable=self.use_realesrgan)
+        realesrgan_check.grid(row=2, column=2, sticky=tk.W, pady=5)
+        
         # Max Size (MB)
         max_size_frame = ttk.Frame(params_frame)
-        max_size_frame.grid(row=2, column=0, columnspan=3, sticky=tk.EW, pady=5)
+        max_size_frame.grid(row=3, column=0, columnspan=3, sticky=tk.EW, pady=5)
         
         ttk.Label(max_size_frame, text="Max Size (MB):").pack(side=tk.LEFT, padx=(0, 5))
         
@@ -174,7 +188,7 @@ class VideoProcessorApp:
         
         # Frame per slider e label
         size_slider_frame = ttk.Frame(params_frame)
-        size_slider_frame.grid(row=3, column=0, columnspan=3, sticky=tk.EW)
+        size_slider_frame.grid(row=4, column=0, columnspan=3, sticky=tk.EW)
         
         max_size_scale = ttk.Scale(size_slider_frame, variable=self.max_size_mb, from_=1, to=100, orient=tk.HORIZONTAL)
         max_size_scale.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
@@ -195,11 +209,11 @@ class VideoProcessorApp:
         update_max_size_state()  # Inizializza lo stato
         
         # Quality
-        ttk.Label(params_frame, text="Qualità (0-100):").grid(row=4, column=0, sticky=tk.W, pady=5)
+        ttk.Label(params_frame, text="Qualità (0-100):").grid(row=5, column=0, sticky=tk.W, pady=5)
         quality_scale = ttk.Scale(params_frame, variable=self.quality, from_=0, to=100, orient=tk.HORIZONTAL)
-        quality_scale.grid(row=4, column=1, sticky=tk.EW, pady=5)
+        quality_scale.grid(row=5, column=1, sticky=tk.EW, pady=5)
         quality_label = ttk.Label(params_frame, width=5)
-        quality_label.grid(row=4, column=2, pady=5)
+        quality_label.grid(row=5, column=2, pady=5)
         
         def update_quality_label(*args):
             quality_label.config(text=str(self.quality.get()))
@@ -370,28 +384,31 @@ class VideoProcessorApp:
             print(f"Avvio elaborazione video: {self.video_path.get()}")
             
             # Verifica se è attiva la modalità test
+            max_frames = None
             if self.test_mode.get():
                 print(f"Modalità test attiva: elaborazione di {self.test_frames.get()} frames")
                 max_frames = self.test_frames.get()
-            else:
-                max_frames = None
             
-            # Gestione dell'opzione "nessun limite di dimensione"
-            max_size = None if self.no_size_limit.get() else self.max_size_mb.get()
-            if self.no_size_limit.get():
-                print("Opzione 'nessun limite di dimensione' attivata: il video non sarà compresso")
+            # Crea il percorso di output per il video
+            os.makedirs(self.output_dir.get(), exist_ok=True)
+            output_video = os.path.join(
+                self.output_dir.get(), 
+                f"processed_{os.path.basename(self.video_path.get())}"
+            )
             
-            # Chiama la funzione di elaborazione dal tuo script
+            # Chiama la funzione di elaborazione dal nuovo script
             process_video(
-                self.video_path.get(),
-                self.output_dir.get(),
-                self.prompt.get(),
-                self.model_path.get(),
-                self.strength.get(),
-                self.steps.get(),
-                max_size,
-                self.quality.get(),
-                max_frames=max_frames  # Passa il parametro max_frames
+                input_video=self.video_path.get(),
+                output_video=output_video,
+                prompt=self.prompt.get(),
+                model_path=self.model_path.get(),
+                strength=self.strength.get(),
+                steps=self.steps.get(),
+                target_height=self.upscale_height.get(),
+                use_realesrgan=self.use_realesrgan.get(),
+                max_frames=max_frames,
+                max_size_mb=None if self.no_size_limit.get() else self.max_size_mb.get(),
+                quality=self.quality.get()
             )
             
             # Mostra messaggio di completamento
