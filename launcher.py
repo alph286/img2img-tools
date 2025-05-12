@@ -90,13 +90,6 @@ def check_and_install_dependencies():
         "ffmpeg-python": "ffmpeg-python>=0.2.0",
     }
     
-    # Dipendenze opzionali per upscaling di alta qualità
-    optional_packages = {
-        "realesrgan": "realesrgan>=0.3.0",
-        "basicsr": "basicsr>=1.4.2",
-        "facexlib": "facexlib>=0.2.5"
-    }
-    
     # Installa tutte le dipendenze base senza verificare se sono già installate
     print("Installazione di tutte le dipendenze base...")
     try:
@@ -114,12 +107,41 @@ def check_and_install_dependencies():
         print("Prova a installare manualmente le dipendenze mancanti.")
         return False
     
-    # Installa sempre le dipendenze opzionali per l'upscaling
+    # Installa le dipendenze per Real-ESRGAN in ordine specifico
     print("\nInstallazione delle dipendenze per l'upscaling di alta qualità...")
     try:
-        optional_reqs = [req for _, req in optional_packages.items()]
-        subprocess.check_call([sys.executable, "-m", "pip", "install"] + optional_reqs)
-        print("Dipendenze opzionali installate con successo!")
+        # Installa prima basicsr
+        print("Installazione di basicsr...")
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "basicsr>=1.4.2"])
+        
+        # Poi installa facexlib
+        print("Installazione di facexlib...")
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "facexlib>=0.2.5"])
+        
+        # Infine installa realesrgan
+        print("Installazione di realesrgan...")
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "realesrgan>=0.3.0"])
+        
+        # Verifica se realesrgan è stato installato correttamente
+        try:
+            import realesrgan
+            from basicsr.archs.rrdbnet_arch import RRDBNet
+            from realesrgan import RealESRGANer
+            print("Real-ESRGAN installato con successo!")
+        except ImportError as e:
+            print(f"Real-ESRGAN non è stato installato correttamente: {e}")
+            print("Tentativo di installazione alternativa...")
+            try:
+                # Prova a installare da GitHub
+                subprocess.check_call([
+                    sys.executable, "-m", "pip", "install", 
+                    "git+https://github.com/xinntao/Real-ESRGAN.git"
+                ])
+                import realesrgan
+                print("Real-ESRGAN installato con successo tramite GitHub!")
+            except (subprocess.SubprocessError, ImportError) as e:
+                print(f"Installazione alternativa fallita: {e}")
+                print("L'upscaling utilizzerà metodi standard invece di Real-ESRGAN.")
     except subprocess.SubprocessError as e:
         print(f"Errore durante l'installazione delle dipendenze opzionali: {e}")
         print("L'upscaling utilizzerà metodi standard invece di Real-ESRGAN.")
